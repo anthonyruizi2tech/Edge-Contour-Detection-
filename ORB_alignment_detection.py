@@ -2,7 +2,102 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
+from rembg import remove
+import os 
 
+
+
+def rem_bg_rgb(image_path):
+    # Load the original image
+    image_original = cv2.imread(image_path, cv2.IMREAD_COLOR)
+
+    # Convert the image to bytes for rembg to process
+    _, img_bytes = cv2.imencode('.png', image_original)
+    img_bytes = img_bytes.tobytes()
+
+    # Use rembg to remove the background
+    output_bytes = remove(img_bytes)
+
+    # Convert the output bytes to an image
+    nparr = np.frombuffer(output_bytes, np.uint8)
+    image_no_bg = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+
+    # Ensure we have a 3-channel (RGB/BGR) image for display purposes
+    if image_no_bg.shape[2] == 4:  # If image has an alpha channel
+        image_no_bg = cv2.cvtColor(image_no_bg, cv2.COLOR_BGRA2BGR)
+
+    # Convert images to RGB for correct display in matplotlib (only for showing)
+    image_original_rgb = cv2.cvtColor(image_original, cv2.COLOR_BGR2RGB)
+    image_no_bg_rgb = cv2.cvtColor(image_no_bg, cv2.COLOR_BGR2RGB)
+
+    # Plot the images
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 15))
+
+    ax1.set_title('Original Image')
+    ax1.imshow(image_original_rgb)
+    ax1.axis('off')
+
+    ax2.set_title('Image with Background Removed')
+    ax2.imshow(image_no_bg_rgb)
+    ax2.axis('off')
+
+    plt.show()
+
+
+
+    return image_no_bg
+
+
+def rem_bg_lapacian(image_path):
+    # Load the original image
+    image_original = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    file_basename  = os.path.splitext(os.path.basename(image_path))[0]
+
+    # Convert the image to bytes for rembg to process
+    _, img_bytes = cv2.imencode('.png', image_original)
+    img_bytes = img_bytes.tobytes()
+
+    # Use rembg to remove the background
+    output_bytes = remove(img_bytes)
+
+    # Convert the output bytes to an image
+    nparr = np.frombuffer(output_bytes, np.uint8)
+    image_no_bg = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+
+    # Convert to grayscale (ignoring alpha channel)
+    image_gray = cv2.cvtColor(image_no_bg, cv2.COLOR_BGR2GRAY)
+
+    # Reduce noise using Gaussian blur
+    img = cv2.GaussianBlur(image_gray, (3, 3), 0)
+
+    # Apply Laplacian filter for edge detection
+    filtered_image = cv2.Laplacian(img, ddepth=cv2.CV_16S, ksize=3)
+
+    # Convert the result to uint8
+    filtered_image = cv2.convertScaleAbs(filtered_image)
+
+    # Convert images to RGB for correct display in matplotlib
+    image_original_rgb = cv2.cvtColor(image_original, cv2.COLOR_BGR2RGB)
+    image_no_bg_rgb = cv2.cvtColor(image_no_bg, cv2.COLOR_BGR2RGB)
+
+    # Plot the images
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 15))
+
+    ax1.set_title(f'{file_basename}.png Image')
+    ax1.imshow(image_original_rgb)
+    ax1.axis('off')
+
+    ax2.set_title('Image with Background Removed')
+    ax2.imshow(image_no_bg_rgb)
+    ax2.axis('off')
+
+    ax3.set_title('Laplacian Filtered No Background Image')
+    ax3.imshow(filtered_image, cmap='gray')
+    ax3.axis('off') 
+
+
+    plt.show()
+    return filtered_image
 
 
 def detect_differences(img1, img2,
@@ -77,10 +172,12 @@ def detect_differences(img1, img2,
 
     return result, thresh
 
+
 def cv2_to_rgb(img):
     if len(img.shape) == 3:  # Color image
         return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img  # Grayscale image remains the same
+
 
 def add_label(image, text):
 
@@ -105,129 +202,168 @@ def add_label(image, text):
     return img
 
 
+def orb_alignment_detection(ref_img_path,test_img_path):
 
+    # Load the images in grayscale for feature extraction
+    ref_img = cv2.imread(ref_img_path, cv2.IMREAD_GRAYSCALE)
+    test_img = cv2.imread(test_img_path, cv2.IMREAD_GRAYSCALE)
 
-# Define image paths
-ref_img_path = 'ORBTEST/ref_lapacian.png'
-test_img_path = 'ORBTEST/test_lapacian.png'
+    # Check if images were loaded correctly
+    if ref_img is None:
+        print(f"Cannot open reference image: {ref_img_path}")
+        sys.exit(1)
+    if test_img is None:
+        print(f"Cannot open test image: {test_img_path}")
+        sys.exit(1)
 
-# Load the images in grayscale for feature extraction
-ref_img = cv2.imread(ref_img_path, cv2.IMREAD_GRAYSCALE)
-test_img = cv2.imread(test_img_path, cv2.IMREAD_GRAYSCALE)
+    # Initialize ORB detector
+    orb = cv2.ORB_create()
 
-# Check if images were loaded correctly
-if ref_img is None:
-    print(f"Cannot open reference image: {ref_img_path}")
-    sys.exit(1)
-if test_img is None:
-    print(f"Cannot open test image: {test_img_path}")
-    sys.exit(1)
+    # Detect keypoints and descriptors
+    kp_ref, des_ref = orb.detectAndCompute(ref_img, None)
+    kp_test, des_test = orb.detectAndCompute(test_img, None)
 
-# Initialize ORB detector
-orb = cv2.ORB_create()
+    # Match descriptors using BFMatcher
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des_ref, des_test)
 
-# Detect keypoints and descriptors
-kp_ref, des_ref = orb.detectAndCompute(ref_img, None)
-kp_test, des_test = orb.detectAndCompute(test_img, None)
+    # Sort matches by distance (lower distance is better)
+    matches = sorted(matches, key=lambda x: x.distance)
 
-# Match descriptors using BFMatcher
-bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-matches = bf.match(des_ref, des_test)
+    # Use the top N matches for affine transformation estimation
+    N = 30
+    good_matches = matches[:N]
 
-# Sort matches by distance (lower distance is better)
-matches = sorted(matches, key=lambda x: x.distance)
+    # Extract matched keypoints
+    pts_ref = np.float32([kp_ref[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    pts_test = np.float32([kp_test[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
-# Use the top N matches for affine transformation estimation
-N = 30
-good_matches = matches[:N]
+    # Compute the affine transformation matrix (translation, rotation, scaling)
+    # Note: Using RANSAC for robust matching
+    M, mask = cv2.estimateAffine2D(pts_test, pts_ref, method=cv2.RANSAC, ransacReprojThreshold=5.0)
 
-# Extract matched keypoints
-pts_ref = np.float32([kp_ref[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-pts_test = np.float32([kp_test[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    # Apply the affine transformation to align the test image to the reference image
+    aligned_img = cv2.warpAffine(test_img, M, (ref_img.shape[1], ref_img.shape[0]))
 
-# Compute the affine transformation matrix (translation, rotation, scaling)
-# Note: Using RANSAC for robust matching
-M, mask = cv2.estimateAffine2D(pts_test, pts_ref, method=cv2.RANSAC, ransacReprojThreshold=5.0)
+    # Heatmap of unaligned portions (difference between reference and aligned image)
+    diff_img = cv2.absdiff(ref_img, aligned_img)
+    heatmap = cv2.applyColorMap(diff_img, cv2.COLORMAP_JET)
 
-# Apply the affine transformation to align the test image to the reference image
-aligned_img = cv2.warpAffine(test_img, M, (ref_img.shape[1], ref_img.shape[0]))
+    # Convert aligned image to color (3 channels) for overlaying
+    aligned_img_color = cv2.cvtColor(aligned_img, cv2.COLOR_GRAY2BGR)
 
-# Heatmap of unaligned portions (difference between reference and aligned image)
-diff_img = cv2.absdiff(ref_img, aligned_img)
-heatmap = cv2.applyColorMap(diff_img, cv2.COLORMAP_JET)
+    # Resize aligned_img to match reference image size
+    aligned_img_resized = cv2.resize(aligned_img, (ref_img.shape[1], ref_img.shape[0]))
 
-# Convert aligned image to color (3 channels) for overlaying
-aligned_img_color = cv2.cvtColor(aligned_img, cv2.COLOR_GRAY2BGR)
+    # Convert to color for overlay
+    aligned_img_color = cv2.cvtColor(aligned_img_resized, cv2.COLOR_GRAY2BGR)
 
-# Resize aligned_img to match reference image size
-aligned_img_resized = cv2.resize(aligned_img, (ref_img.shape[1], ref_img.shape[0]))
+    # Overlay the aligned image on top of the reference image
+    overlay = cv2.addWeighted(cv2.cvtColor(ref_img, cv2.COLOR_GRAY2BGR), 0.5, aligned_img_color, 0.5, 0)
 
-# Convert to color for overlay
-aligned_img_color = cv2.cvtColor(aligned_img_resized, cv2.COLOR_GRAY2BGR)
-
-# Overlay the aligned image on top of the reference image
-overlay = cv2.addWeighted(cv2.cvtColor(ref_img, cv2.COLOR_GRAY2BGR), 0.5, aligned_img_color, 0.5, 0)
-
-# Draw the matches between the two images
-match_img = cv2.drawMatches(ref_img, kp_ref, test_img, kp_test, good_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    # Draw the matches between the two images
+    match_img = cv2.drawMatches(ref_img, kp_ref, test_img, kp_test, good_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
 
 
-# detect differences in test image in relation to reference image, after test part has been aligned
-result, diffmask = detect_differences(ref_img, aligned_img_resized)
+    # detect differences in test image in relation to reference image, after test part has been aligned
+    result, diffmask = detect_differences(ref_img, aligned_img_resized)
 
-mask_img = add_label(diffmask, "Masking Differences")
-anno_img = add_label(result, "Annotations")  
-
-
-
-# Display results
-plt.figure(figsize=(15, 7))
-
-# Top row: Display keypoint matches
-plt.subplot(2, 6, 1)
-plt.imshow(test_img, cmap='gray')
-plt.title('Test Image')
-
-plt.subplot(2, 6, 2)
-plt.imshow(cv2.drawKeypoints(test_img, kp_test, None, color=(0, 255, 0), flags=cv2.DrawMatchesFlags_DRAW_RICH_KEYPOINTS))
-plt.title('(Part) Detected Points \nfor Alignment')
-
-plt.subplot(2, 6, 3)
-plt.imshow(heatmap)
-plt.title('Heat Map of \nUnaligned Portions')
-
-#plt.subplot(2, 6, 4)
-#plt.imshow(overlay)
-#plt.title('Aligned Images Overlayed')
-plt.subplot(2, 6, 4)
-plt.imshow(aligned_img_color)
-plt.title('Aligned test Image')
-
-plt.subplot(2, 6, 5)
-plt.imshow(mask_img, cmap= 'gray')
-plt.title('Masking Differences\n(Ref vs test part aligned)')
-
-plt.subplot(2, 6, 6)
-plt.imshow(cv2_to_rgb(anno_img))
-plt.title('Annotations')
+    mask_img = add_label(diffmask, "Masking Differences")
+    anno_img = add_label(result, "Annotations")  
 
 
-# Bottom row: Display reference image and matches
-plt.subplot(2, 6, 7)
-plt.imshow(cv2_to_rgb(ref_img), cmap='gray')
-plt.title('Reference Image')
 
-plt.subplot(2, 6, 8)
-ref_kp_img = cv2.drawKeypoints(cv2.cvtColor(ref_img, cv2.COLOR_GRAY2BGR), kp_ref, None, color=(0, 255, 0), flags=cv2.DrawMatchesFlags_DRAW_RICH_KEYPOINTS)
-plt.imshow(cv2_to_rgb(ref_kp_img))
-plt.title('(Ref) Detected Points \nfor Alignment')
+    # Display results
+    plt.figure(figsize=(15, 7))
 
-plt.subplot(2, 6, 9)
-plt.imshow(match_img)
-plt.title('Keypoint Matches')
+    # Top row: Display keypoint matches
+    plt.subplot(2, 6, 1)
+    plt.imshow(test_img, cmap='gray')
+    plt.title('Test Image')
 
-plt.axis('off')
-plt.tight_layout()
-plt.show()
+    plt.subplot(2, 6, 2)
+    plt.imshow(cv2.drawKeypoints(test_img, kp_test, None, color=(0, 255, 0), flags=cv2.DrawMatchesFlags_DRAW_RICH_KEYPOINTS))
+    plt.title('(Part) Detected Points \nfor Alignment')
+
+    plt.subplot(2, 6, 3)
+    plt.imshow(heatmap)
+    plt.title('Heat Map of \nUnaligned Portions')
+
+    #plt.subplot(2, 6, 4)
+    #plt.imshow(overlay)
+    #plt.title('Aligned Images Overlayed')
+    plt.subplot(2, 6, 4)
+    plt.imshow(aligned_img_color)
+    plt.title('Aligned test Image')
+
+    plt.subplot(2, 6, 5)
+    plt.imshow(mask_img, cmap= 'gray')
+    plt.title('Masking Differences\n(Ref vs test part aligned)')
+
+    plt.subplot(2, 6, 6)
+    plt.imshow(cv2_to_rgb(anno_img))
+    plt.title('Annotations')
+
+
+    # Bottom row: Display reference image and matches
+    plt.subplot(2, 6, 7)
+    plt.imshow(cv2_to_rgb(ref_img), cmap='gray')
+    plt.title('Reference Image')
+
+    plt.subplot(2, 6, 8)
+    ref_kp_img = cv2.drawKeypoints(cv2.cvtColor(ref_img, cv2.COLOR_GRAY2BGR), kp_ref, None, color=(0, 255, 0), flags=cv2.DrawMatchesFlags_DRAW_RICH_KEYPOINTS)
+    plt.imshow(cv2_to_rgb(ref_kp_img))
+    plt.title('(Ref) Detected Points \nfor Alignment')
+
+    plt.subplot(2, 6, 9)
+    plt.imshow(match_img)
+    plt.title('Keypoint Matches')
+
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+
+def verify_path(imag_path):
+    # Verify paths exist
+    if os.path.isfile(imag_path):
+        print(f" Image exists: {imag_path}")
+    else:
+        print(f" Image NOT found: {imag_path}")
+        exit()
+
+
+
+#######################################################
+#                Main program 
+#######################################################
+if __name__ == "__main__":
+
+
+    # Define image paths
+    ref_img_path = 'reference_part.png'
+    verify_path(ref_img_path)
+    ref_imag_basename  = os.path.splitext(os.path.basename(ref_img_path))[0]
+
+    test_img_path = 'test_part.png'
+    verify_path(test_img_path)
+    test_img_basename = os.path.splitext(os.path.basename(test_img_path))[0]
+
+
+
+    # take image path,  remove background, apply lapacian filter
+    refPart_image_returned = rem_bg_lapacian(ref_img_path)
+    cv2.imwrite(f'lapacian_{ref_imag_basename}.png', refPart_image_returned)  # save image with filter
+
+
+    # take image path,  remove background, apply lapacian filter
+    testPart_image_returned = rem_bg_lapacian(test_img_path)
+    cv2.imwrite(f'lapacian_{test_img_basename}.png', testPart_image_returned)  # save image with filter
+
+    # ORB alignment and detection 
+    orb_alignment_detection(f'lapacian_{ref_imag_basename}.png',f'lapacian_{test_img_basename}.png')
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 

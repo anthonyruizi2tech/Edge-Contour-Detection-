@@ -5,7 +5,56 @@ import sys
 from rembg import remove
 import os 
 
+#rembg with canny edge detection. this is obsolete to lapacian due to incresed false edge detection
+def rem_bg_canny(image_path):
+    # Load the original image
+    image_original = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    file_basename = os.path.splitext(os.path.basename(image_path))[0]
 
+    # Convert the image to bytes for rembg to process
+    _, img_bytes = cv2.imencode('.png', image_original)
+    img_bytes = img_bytes.tobytes()
+
+    print(f"rem_bg_canny: removing background on {file_basename}")
+    # Use rembg to remove the background
+    output_bytes = remove(img_bytes)
+
+    # Convert the output bytes to an image
+    nparr = np.frombuffer(output_bytes, np.uint8)
+    image_no_bg = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+
+    # Convert to grayscale (ignoring alpha channel if present)
+    image_gray = cv2.cvtColor(image_no_bg, cv2.COLOR_BGR2GRAY)
+
+    # Reduce noise using Gaussian blur
+    img_blur = cv2.GaussianBlur(image_gray, (3, 3), 0)
+
+    # Apply Canny edge detection
+    print(f"rem_bg_canny: applying Canny edge detection on image: {file_basename}")
+    edges = cv2.Canny(img_blur, threshold1=50, threshold2=150)
+
+    # Convert images to RGB for correct display in matplotlib
+    image_original_rgb = cv2.cvtColor(image_original, cv2.COLOR_BGR2RGB)
+    image_no_bg_rgb = cv2.cvtColor(image_no_bg, cv2.COLOR_BGR2RGB)
+
+    # Plot the images
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 15))
+
+    ax1.set_title(f'{file_basename}.png Image')
+    ax1.imshow(image_original_rgb)
+    ax1.axis('off')
+
+    ax2.set_title('Image with Background Removed')
+    ax2.imshow(image_no_bg_rgb)
+    ax2.axis('off')
+
+    ax3.set_title('Canny Edge Detection on No Background Image')
+    ax3.imshow(edges, cmap='gray')
+    ax3.axis('off')
+
+    plt.show()
+
+    return edges
 
 def rem_bg_rgb(image_path):
     # Load the original image
@@ -47,7 +96,7 @@ def rem_bg_rgb(image_path):
 
     return image_no_bg
 
-
+#lapacian is ioptimal in this case. better edge detection and reduced false positives to canny. better alignment in ORB as well.
 def rem_bg_lapacian(image_path):
     # Load the original image
     image_original = cv2.imread(image_path, cv2.IMREAD_COLOR)
@@ -57,6 +106,7 @@ def rem_bg_lapacian(image_path):
     _, img_bytes = cv2.imencode('.png', image_original)
     img_bytes = img_bytes.tobytes()
 
+    print(f"rem_bg_lapacian: removing background on {file_basename}")
     # Use rembg to remove the background
     output_bytes = remove(img_bytes)
 
@@ -71,6 +121,7 @@ def rem_bg_lapacian(image_path):
     img = cv2.GaussianBlur(image_gray, (3, 3), 0)
 
     # Apply Laplacian filter for edge detection
+    print(f"rem_bg_lapacian: applying Lapacian for edge detection on image: {file_basename}")
     filtered_image = cv2.Laplacian(img, ddepth=cv2.CV_16S, ksize=3)
 
     # Convert the result to uint8
@@ -118,6 +169,7 @@ def detect_differences(img1, img2,
     threshold: Pixel intensity difference threshold to classify a pixel as “different.”
     """
 
+    print(f"detect_differences: Detecting differences in images...")
 
     # Convert to grayscale if image is color
     g1 = img1 if len(img1.shape) == 2 else cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
@@ -143,11 +195,13 @@ def detect_differences(img1, img2,
     # Convert to grayscale if necessary
     g2_aligned = aligned_img2 if len(aligned_img2.shape) == 2 else cv2.cvtColor(aligned_img2, cv2.COLOR_BGR2GRAY)
 
+    print(f"detect_differences: noise reduction (GaussianBlur blur_size: {blur_size})...")
     # --- NOISE REDUCTION ---
     g1_blur = cv2.GaussianBlur(g1, (blur_size, blur_size), 0)
     g2_blur = cv2.GaussianBlur(g2_aligned, (blur_size, blur_size), 0)
 
     # --- DIFFERENCE IMAGE ---
+    print(f"detect_differences: diff detect with...\n       min_contour_area: {min_contour_area}\n       Thresh: {threshold}\n       blur_size:{blur_size}")
     diff = cv2.absdiff(g1_blur, g2_blur)
     _, thresh = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
 
@@ -163,7 +217,8 @@ def detect_differences(img1, img2,
     # Ensure it is BGR (3 channels) even if input was grayscale
     if len(result.shape) == 2:
         result = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
-
+    
+    print(f"detect_differences: Contouring Differences: area > min contour area {min_contour_area}") 
     for c in contours:
         area = cv2.contourArea(c)
         if area > min_contour_area:
@@ -203,7 +258,7 @@ def add_label(image, text):
 
 
 def orb_alignment_detection(ref_img_path,test_img_path):
-
+    print("opening images for ORB alignment and detection")
     # Load the images in grayscale for feature extraction
     ref_img = cv2.imread(ref_img_path, cv2.IMREAD_GRAYSCALE)
     test_img = cv2.imread(test_img_path, cv2.IMREAD_GRAYSCALE)
@@ -216,6 +271,7 @@ def orb_alignment_detection(ref_img_path,test_img_path):
         print(f"Cannot open test image: {test_img_path}")
         sys.exit(1)
 
+    print(f"orb_alignment_detection: Initializing orb detetcor for images: \n    REF: {ref_img_path}\n   PART: {test_img_path}")
     # Initialize ORB detector
     orb = cv2.ORB_create()
 
@@ -233,6 +289,8 @@ def orb_alignment_detection(ref_img_path,test_img_path):
     # Use the top N matches for affine transformation estimation
     N = 30
     good_matches = matches[:N]
+    print(f"orb_alignment_detection: Using {N} matches for affine transformation estimation.")
+
 
     # Extract matched keypoints
     pts_ref = np.float32([kp_ref[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
@@ -265,13 +323,13 @@ def orb_alignment_detection(ref_img_path,test_img_path):
     match_img = cv2.drawMatches(ref_img, kp_ref, test_img, kp_test, good_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
 
-
     # detect differences in test image in relation to reference image, after test part has been aligned
     result, diffmask = detect_differences(ref_img, aligned_img_resized)
 
     mask_img = add_label(diffmask, "Masking Differences")
     anno_img = add_label(result, "Annotations")  
 
+    print(f"orb_alignment_detection: Displaying annotations with key match points in images...")
 
 
     # Display results

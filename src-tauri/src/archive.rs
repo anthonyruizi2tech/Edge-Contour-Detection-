@@ -1,4 +1,3 @@
-use rust_fuzzy_search::fuzzy_compare;
 use serde::Serialize;
 
 #[derive(Default,Serialize,Clone, Debug)]

@@ -1,48 +1,61 @@
 import {useEffect, useState} from "react";
-import {Category} from "../category.ts";
+import {Archive} from "../archive.ts";
 import {invoke} from "@tauri-apps/api/core";
+import {sendSearch} from "../send_search.ts";
 
 type Props = {
     setView: (view: string) => void;
 };
 
 function ArchivesView({ setView }: Props) {
-    const [categories, setCategories] = useState<Category[]>([]);
+
+    const [categories, setCategories] = useState<Archive[]>([]);
+    const [search, setSearch] = useState("");
+
+    async function load() {
+        try {
+            const result = await invoke<Archive[]>("get_shared_archives");
+            setCategories(result);
+        } catch (e) {}
+    }
 
     useEffect(() => {
-        async function load() {
-            try {
-                const result = await invoke<Category[]>("get_shared_archives");
-                console.log("Archives:", result);
-                setCategories(result);
-            } catch (e) {
-                console.error("Invoke failed:", e);
-            }
-        }
-
         load();
     }, []);
 
     return (
         <div>
             <div className="container">
-                <input className="search-bar" placeholder="search" />
-                <button className="btn">Category</button>
 
-                {/* Switch to Archives */}
+                <input
+                    className="search-bar"
+                    placeholder="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyUp={() => {
+                        sendSearch(search);
+                        load();
+                    }}
+                />
+
                 <button
                     className="btn"
-                    onClick={() => setView("archives")}
+                    onClick={() => setView("categories")}
                 >
-                    Archives
+                    Categories
                 </button>
+                <button className="btn">Archives</button>
+
+
             </div>
 
-            <div className="items-container">
+            <div className="archives-container">
                 {categories.map((cat, i) => (
                     <div className="item" key={i}>
                         <div className="item-label">{cat.title}</div>
-                        <button className="item-button" onClick={() => {}}>
+                        <div className="item_category_label">{cat.category}</div>
+                        <div className="item-timestamp-label">{cat.timestamp}</div>
+                        <button className="archive-button" onClick={() => {}}>
                             Open
                         </button>
                     </div>

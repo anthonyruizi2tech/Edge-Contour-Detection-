@@ -7,7 +7,23 @@ pub struct Category {
     pub threshold: i64,
 }
 
-pub fn get_default_categories() -> Vec<Category> {
+// EXAMPLE FUNCTION PRIOR TO DATA BASE
+pub fn get_database_categories(filter: String) -> Vec<Category> {
+
+    let categories = get_example_categories();
+
+    let mut filtered_categories: Vec<Category> = Vec::new();
+
+    for c in categories {
+        if c.title.to_ascii_lowercase().contains(&filter.to_ascii_lowercase()) {
+            filtered_categories.push(c);
+        }
+    }
+
+    filtered_categories
+}
+
+pub fn get_example_categories() -> Vec<Category> {
 
     vec![
         Category { title: "Item A".to_string(), reference_image: "".to_string(), threshold: 0, },

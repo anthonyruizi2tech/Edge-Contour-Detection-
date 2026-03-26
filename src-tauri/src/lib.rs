@@ -1,8 +1,9 @@
-mod bridge;
+mod tauri_bridge;
 mod category;
 mod model;
 mod app_state;
 mod archive;
+mod pyo3_bridge;
 
 use crate::app_state::AppState;
 
@@ -12,6 +13,6 @@ pub fn run() {
 
     model::run(app_state.clone());
 
-    bridge::build(app_state);
+    tauri_bridge::build(app_state);
 }
 
